@@ -57,7 +57,7 @@ ActiveRecord::Base.class_eval do
             "#{table_name}.#{connection.quote_column_name(attr)} && ? " 
           end
         else
-          "#{table_name}.#{connection.quote_column_name(attr)} #{attribute_condition(value)}"
+          "#{table_name}.#{attribute_condition(connection.quote_column_name(attr), value)}"
         end
       end.join(' AND ')
     end
