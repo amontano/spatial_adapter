@@ -61,22 +61,55 @@ ActiveRecord::Base.class_eval do
         end
       end.join(' AND ')
     end
-    if ActiveRecord::VERSION::STRING == "1.15.1"
+    def self.get_rails2_2_conditions(attrs, table_name)
+      attrs.map do |attr, value|
+        attr = attr.to_s
+        if columns_hash[attr].is_a?(SpatialColumn)
+          if value.is_a?(Array)
+            attrs[attr.to_sym]= "BOX3D(" + value[0].join(" ") + "," + value[1].join(" ") + ")"
+            "#{table_name}.#{connection.quote_column_name(attr)} && SetSRID(?::box3d, #{value[2] || DEFAULT_SRID} ) " 
+          elsif value.is_a?(Envelope)
+            attrs[attr.to_sym]= "BOX3D(" + value.lower_corner.text_representation + "," + value.upper_corner.text_representation + ")"
+            "#{table_name}.#{connection.quote_column_name(attr)} && SetSRID(?::box3d, #{value.srid} ) " 
+          else
+            "#{table_name}.#{connection.quote_column_name(attr)} && ? " 
+          end
+        elsif value.is_a?(Hash)
+          sanitize_sql_hash_for_conditions(value, connection.quote_table_name(attr.to_s))
+        else
+          #original stuff
+          # Extract table name from qualified attribute names.
+          if attr.include?('.')
+            table_name, attr = attr.split('.', 2)
+            table_name = connection.quote_table_name(table_name)
+          end
+          attribute_condition("#{table_name}.#{connection.quote_column_name(attr)}", value)
+        end
+      end.join(' AND ')
+    end
+    active_record_version = ActiveRecord::VERSION::STRING
+    if active_record_version == "1.15.1"
       def self.sanitize_sql_hash(attrs)
         conditions = get_conditions(attrs)
         replace_bind_variables(conditions, attrs.values)
       end
-    elsif ActiveRecord::VERSION::STRING.starts_with?("1.15")
+    elsif active_record_version.starts_with?("1.15")
       def self.sanitize_sql_hash(attrs)
         conditions = get_conditions(attrs)
         replace_bind_variables(conditions, expand_range_bind_variables(attrs.values))
       end
-    else
-      #For Rails >= 2
+    elsif active_record_version.starts_with?("2.0") || active_record_version.starts_with?("2.1")
+      #For Rails == 2.0 or 2.1
       def self.sanitize_sql_hash_for_conditions(attrs)
         conditions = get_conditions(attrs)
         replace_bind_variables(conditions, expand_range_bind_variables(attrs.values))
       end
+    else
+      #For Rails >= 2.2
+      def self.sanitize_sql_hash_for_conditions(attrs, table_name = quoted_table_name)
+        conditions = get_rails2_2_conditions(attrs, table_name)
+        replace_bind_variables(conditions, expand_range_bind_variables(attrs.values))
+      end      
     end
   end
 end
